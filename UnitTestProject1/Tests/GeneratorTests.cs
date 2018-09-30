@@ -416,5 +416,29 @@ namespace UnitTestProject1.Tests
             Assert.Contains("分類:後波拿巴列傳", titles);
         }
 
+        [Theory]
+        [InlineData(Endpoints.WikipediaBetaEn, new[] {  BuiltInNamespaces.Main })]
+        [InlineData(Endpoints.WikipediaBetaEn, new[] {  BuiltInNamespaces.Category })]
+        [InlineData(Endpoints.WikipediaBetaEn, new[] {  BuiltInNamespaces.Project, BuiltInNamespaces.Help })]
+        [InlineData(Endpoints.WikiaTest, new[] { BuiltInNamespaces.Main })]
+        [InlineData(Endpoints.WikiaTest, new[] { BuiltInNamespaces.Category })]
+        [InlineData(Endpoints.WikiaTest, new[] { BuiltInNamespaces.Project, BuiltInNamespaces.Help })]
+        public async Task WpTest2RandomGeneratorTests(string endpoint, int[] namespaces)
+        {
+            var site = await GetWikiSiteAsync(endpoint);
+            var generator = new RandomPageGenerator(site) { NamespaceIds = namespaces, PaginationSize = 10 };
+            var stubs = await generator.EnumItemsAsync().Take(20).ToList();
+            Assert.All(stubs, s => Assert.Contains(s.NamespaceId, namespaces));
+            generator.RedirectsFilter = PropertyFilterOption.WithProperty;
+            var pages = await generator.EnumPagesAsync().Take(20).ToList();
+            Assert.All(pages, p =>
+            {
+                Assert.Contains(p.NamespaceId, namespaces);
+                Assert.True(p.IsRedirect);
+            });
+            // We are obtaining random sequence.
+            if (stubs.Count > 0) Assert.NotEqual(stubs.Select(s => s.Title), pages.Select(p => p.Title));
+        }
+
     }
 }

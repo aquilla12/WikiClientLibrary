@@ -75,7 +75,11 @@ namespace WikiClientLibrary.Sites
         /// </summary>
         /// <param name="title">The title of the article.</param>
         /// <exception cref="ArgumentNullException"><paramref name="title"/> is <c>null</c>.</exception>
-        /// <remarks>This overload uses <c>https:</c> as default protocol for protocol-relative.</remarks>
+        /// <remarks>
+        /// This overload uses <c>https:</c> as default protocol for protocol-relative URL.
+        /// For wiki sites with specified-protocol <see cref="ServerUrl"/>, such as Wikia (which uses http),
+        /// this overload respects the server-chosen protocol.
+        /// </remarks>
         public string MakeArticleUrl(string title)
         {
             return MakeArticleUrl(title, "https");
@@ -85,10 +89,15 @@ namespace WikiClientLibrary.Sites
         /// Makes the full URL to the page of specified title.
         /// </summary>
         /// <param name="title">The title of the article.</param>
-        /// <param name="defaultProtocol">For protocol-relative URL (e.g. <c>//en.wikipedia.org/</c>),
+        /// <param name="defaultProtocol">
+        /// For wiki sites whose <see cref="ServerUrl"/> is protocol-relative URL (e.g. <c>//en.wikipedia.org/</c>),
         /// specifies the default protocol to use. (e.g. <c>https</c>)</param>
         /// <exception cref="ArgumentNullException">Either <paramref name="title"/> or <paramref name="defaultProtocol"/> is <c>null</c>.</exception>
         /// <returns>The full URL of the article.</returns>
+        /// <remarks>
+        /// For wiki sites with specified-protocol <see cref="ServerUrl"/>, such as Wikia (which uses http),
+        /// this overload respects the server-chosen protocol.
+        /// </remarks>
         public string MakeArticleUrl(string title, string defaultProtocol)
         {
             if (title == null) throw new ArgumentNullException(nameof(title));
@@ -645,14 +654,31 @@ namespace WikiClientLibrary.Sites
     {
         private readonly IDictionary<string, InterwikiEntry> nameIwDict;
 
-        internal InterwikiMap(WikiSite site, JArray interwikiMap)
+        internal InterwikiMap(WikiSite site, JArray interwikiMap, ILogger logger)
         {
             // interwikiMap : query.namespacealiases
             if (site == null) throw new ArgumentNullException(nameof(site));
             if (interwikiMap == null) throw new ArgumentNullException(nameof(interwikiMap));
-            // I should use InvariantIgnoreCase. But there's no such a member in PCL.
-            nameIwDict = interwikiMap.ToObject<IList<InterwikiEntry>>(Utility.WikiJsonSerializer)
-                .ToDictionary(e => e.Prefix);
+            var entries = interwikiMap.ToObject<IList<InterwikiEntry>>(Utility.WikiJsonSerializer);
+            var entryDict = new Dictionary<string, InterwikiEntry>(entries.Count);
+            foreach (var entry in entries)
+            {
+                var prefix = entry.Prefix.ToLowerInvariant();
+                try
+                {
+                    entryDict.Add(prefix, entry);
+                }
+                catch (ArgumentException)
+                {
+                    // Duplicate key. We will just keep the first occurence.
+                    if (entryDict[prefix].Url != entry.Url)
+                    {
+                        // And there are same prefixes assigned to different URLs. Worse.
+                        logger.LogWarning("Detected conflicting interwiki URL for prefix {Prefix}.", prefix);
+                    }
+                }
+            }
+            nameIwDict = entryDict;
         }
 
         /// <summary>
